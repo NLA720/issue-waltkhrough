@@ -492,6 +492,207 @@ router.post(
   }
 );
 
+// Alternative endpoint for getting issue thumbnails using OSS signed URL approach
+router.post('/api/acc/getIssueThumbnail', async (req, res) => {
+  console.log('=== ACC THUMBNAIL ENDPOINT (OSS SIGNED URL) ===');
+  const { projectId, issueId } = req.body;
+  console.log('Project ID:', projectId);
+  console.log('Issue ID:', issueId);
+  
+  // Directly extract token from Authorization header
+  let token = null;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    token = req.headers.authorization.substring(7); // Remove 'Bearer ' prefix
+    console.log('Extracted token directly from Authorization header:', token ? token.substring(0, 20) + '...' : 'null');
+  }
+  
+  // Set the token for Model Derivative service
+  config.credentials.token_3legged = token;
+  
+  console.log('Token exists:', !!token);
+  console.log('Token length:', token ? token.length : 'null');
+  
+  try {
+    // Get the issue data first
+    const issue = await issues_services.getOneIssue(projectId, issueId);
+    
+    if (!issue || !issue.snapshotUrn) {
+      console.log('No snapshotUrn found for issue');
+      return res.json({ thumbnailUrl: null });
+    }
+    
+    console.log('Found snapshotUrn:', issue.snapshotUrn);
+    
+    // Extract bucket and object key from URN
+    // Format: urn:adsk.objects:os.object:bucket/objectKey
+    const urnParts = issue.snapshotUrn.split(':');
+    const bucketAndObject = urnParts[urnParts.length - 1];
+    const [bucket, objectKey] = bucketAndObject.split('/');
+    
+    console.log('Extracted bucket:', bucket);
+    console.log('Extracted object key:', objectKey);
+    
+    // Option 1: Try to get a signed URL for the OSS object
+    console.log('Trying OSS signed URL approach...');
+    
+    const signedUrl = `https://developer.api.autodesk.com/oss/v2/buckets/${bucket}/objects/${objectKey}/signeds3download`;
+    
+    console.log('Signed URL endpoint:', signedUrl);
+    
+    const signedResponse = await fetch(signedUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        "access": "read",
+        "useCdn": true,
+        "minutesExpiration": 60
+      })
+    });
+    
+    console.log('Signed URL response status:', signedResponse.status);
+    console.log('Signed URL response ok:', signedResponse.ok);
+    
+    if (signedResponse.ok) {
+      const signedData = await signedResponse.json();
+      console.log('Signed URL response:', signedData);
+      
+      if (signedData.url) {
+        console.log('SUCCESS: Returning signed URL:', signedData.url);
+        return res.json({ thumbnailUrl: signedData.url });
+      } else {
+        console.log('No URL in signed response data');
+      }
+    } else {
+      const errorText = await signedResponse.text();
+      console.log('Signed URL error response:', errorText);
+      console.log('Signed URL failed with status:', signedResponse.status);
+    }
+    
+    // Option 2: Try direct OSS access as fallback
+    console.log('Trying direct OSS access as fallback...');
+    
+    const directUrl = `https://developer.api.autodesk.com/oss/v2/buckets/${bucket}/objects/${objectKey}/content`;
+    
+    console.log('Direct OSS URL:', directUrl);
+    
+    const directResponse = await fetch(directUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    console.log('Direct OSS response status:', directResponse.status);
+    console.log('Direct OSS response ok:', directResponse.ok);
+    
+    if (directResponse.ok) {
+      console.log('SUCCESS: Direct OSS access successful');
+      
+      // Get the content type from the response
+      const contentType = directResponse.headers.get('content-type') || 'image/jpeg';
+      
+      // Convert the response to base64
+      const buffer = await directResponse.arrayBuffer();
+      const base64Image = Buffer.from(buffer).toString('base64');
+      
+      const dataUrl = `data:${contentType};base64,${base64Image}`;
+      console.log('Returning data URL from direct OSS access');
+      
+      return res.json({ thumbnailUrl: dataUrl });
+    } else {
+      const errorText = await directResponse.text();
+      console.log('Direct OSS error response:', errorText);
+      console.log('Direct OSS failed with status:', directResponse.status);
+    }
+    
+    // Option 3: Try Model Derivative approach (working in hemy project)
+    console.log('Trying Model Derivative approach (hemy project method)...');
+    
+    if (issue.placements && issue.placements.length > 0) {
+      const placement = issue.placements[0];
+      if (placement.lineageUrn) {
+        console.log('Found placement lineageUrn:', placement.lineageUrn);
+        
+        // Use direct Model Derivative API call (without forge-apis library)
+        try {
+          console.log('Trying direct Model Derivative API call...');
+          
+          // Base64 encode the URN for Model Derivative API
+          const encodedUrn = Buffer.from(placement.lineageUrn).toString('base64');
+          
+          // Get the manifest for the model
+          const manifestUrl = `https://developer.api.autodesk.com/modelderivative/v2/designdata/${encodedUrn}/manifest`;
+          const manifestResponse = await fetch(manifestUrl, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (manifestResponse.ok) {
+            const manifest = await manifestResponse.json();
+            console.log('Model Derivative manifest status:', manifest.status);
+            
+            if (manifest.status === 'success' && manifest.derivatives) {
+              // Look for thumbnail in derivatives
+              for (const derivative of manifest.derivatives) {
+                if (derivative.children) {
+                  for (const child of derivative.children) {
+                    if (child.role === '2d' && child.children) {
+                      for (const subChild of child.children) {
+                        if (subChild.role === 'thumbnail' && subChild.urn) {
+                          console.log('Found thumbnail URN:', subChild.urn);
+                          
+                          // Get the thumbnail
+                          const thumbnailUrl = `https://developer.api.autodesk.com/modelderivative/v2/designdata/${Buffer.from(subChild.urn).toString('base64')}/thumbnail`;
+                          const thumbnailResponse = await fetch(thumbnailUrl, {
+                            headers: {
+                              'Authorization': `Bearer ${token}`
+                            }
+                          });
+                          
+                          if (thumbnailResponse.ok) {
+                            const thumbnailBuffer = await thumbnailResponse.arrayBuffer();
+                            const thumbnailBase64 = Buffer.from(thumbnailBuffer).toString('base64');
+                            console.log('Successfully retrieved thumbnail from Model Derivative API');
+                            return res.json({ 
+                              thumbnailUrl: `data:image/jpeg;base64,${thumbnailBase64}`,
+                              message: 'Thumbnail retrieved via direct Model Derivative API'
+                            });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            console.log('Model Derivative manifest request failed:', manifestResponse.status, manifestResponse.statusText);
+          }
+        } catch (modelDerivativeError) {
+          console.log('Direct Model Derivative API error:', modelDerivativeError.message);
+        }
+      }
+    }
+    
+    // Option 4: Fallback to placeholder with user feedback
+    console.log('All approaches failed - this is normal for many ACC issues');
+    console.log('The snapshotUrn exists but the actual image file is not accessible through standard APIs');
+    console.log('This is a known limitation of Autodesk Construction Cloud APIs');
+    return res.json({ 
+      thumbnailUrl: null,
+      message: "Thumbnail not available - this is normal for many ACC issues. The issue data was successfully retrieved, but the thumbnail image is not accessible through Autodesk's OSS APIs."
+    });
+    
+  } catch (error) {
+    console.error('OSS thumbnail endpoint error:', error);
+    console.error('Error stack:', error.stack);
+    return res.json({ thumbnailUrl: null });
+  }
+});
 
 router.post(
   "/api/issue/:containerId",

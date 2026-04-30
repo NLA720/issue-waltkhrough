@@ -60,14 +60,25 @@ async function getIssues(containerId,
 async function getOneIssue(containerId,issueId) {
   try {
     let endpoint = config.endpoints.bim360Issues.get_one_issue.format(containerId,issueId) 
+    console.log(`=== DEBUGGING GET ONE ISSUE ===`);
+    console.log(`Container ID: ${containerId}`);
+    console.log(`Issue ID: ${issueId}`);
+    console.log(`Endpoint: ${endpoint}`);
+    
     const headers = config.endpoints.httpHeaders(config.credentials.token_3legged)
+    console.log(`Headers:`, headers);
+    
     const response = await get(endpoint, headers)
+    console.log(`Raw API response:`, response);
+    console.log(`Response type:`, typeof response);
+    console.log(`Response keys:`, response ? Object.keys(response) : 'null/undefined');
      
     console.log(`getting one issue ${issueId} of container ${containerId}`)
     return response
      
   } catch (e) {
     console.error(`getting one issues ${issueId} of container ${containerId} failed: ${e}`)
+    console.error(`Error details:`, e);
     return {}
   }
 }

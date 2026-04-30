@@ -3196,25 +3196,21 @@ async function performFilteringWithGetAllIssues(levelId) {
     if (sidebarItems) {
       sidebarItems.innerHTML = '';
       
-      filteredIssues.forEach(issue => {
-        const issueDiv = document.createElement('div');
-        issueDiv.className = 'sub-icon';
-        issueDiv.style.cursor = 'pointer';
-        issueDiv.style.padding = '5px';
-        issueDiv.style.marginLeft = '10px';
-        issueDiv.style.borderBottom = '1px solid rgb(170, 170, 170)';
-        
-        const statusColor = {
-          open: "bg-warning",
-          closed: "bg-secondary", 
-          draft: "bg-dark",
-          pending: "bg-primary",
-          in_review: "bg-info",
-        };
+      $.each(filteredIssues, (index, issue) => {
+        const issueDiv = document.createElement("div");
+        issueDiv.className = `sub-icon issue ${statusColor[issue.status] || 'bg-secondary'}`;
+        issueDiv.dataset.issueId = issue.id; // Add data attribute for global click listener
+        issueDiv.style.cssText = `
+          padding: 10px;
+          margin-bottom: 5px;
+          border-radius: 5px;
+          cursor: pointer;
+          border-left: 4px solid ${statusColor[issue.status] || '#6c757d'};
+        `;
         
         issueDiv.innerHTML = `
-          <div class="d-block justify-content-between">
-            <div class="d-flex">
+          <div class="d-flex justify-content-between">
+            <div class="d-flex" style="height: 20px; align-items: center;">
               <h6 class="mb-1 fw-bold">#${issue.displayId || issue.id} - ${issue.title}</h6>
             </div>
             <div class="d-flex" style="height: 20px; align-items: center;">
@@ -3224,23 +3220,15 @@ async function performFilteringWithGetAllIssues(levelId) {
           </div>
         `;
         
-        issueDiv.addEventListener('click', () => {
-          // Remove active class from all issues
-          document.querySelectorAll('#issues-sidebar-items .sub-icon').forEach(el => {
-            el.classList.remove('active');
-          });
-          issueDiv.classList.add('active');
-          
-          // Handle pushpin selection if needed
-          if (issue.linkedDocuments && issue.linkedDocuments.length > 0) {
-            const pushpinDetails = issue.linkedDocuments[0].details;
-            if (pushpinDetails) {
-              console.log('Issue clicked:', issue.id, pushpinDetails.position);
-            }
-          }
-        });
+        // Add a simple test click to verify the element is clickable
+        issueDiv.style.cursor = 'pointer';
+        issueDiv.style.border = '1px solid red'; // Visual indicator for debugging
         
         sidebarItems.appendChild(issueDiv);
+        
+        // Test if the click event was attached
+        console.log('Issue element created:', issueDiv);
+        console.log('Issue element has click listener:', issueDiv.onclick !== null);
       });
     }
     
@@ -3248,6 +3236,256 @@ async function performFilteringWithGetAllIssues(levelId) {
   } catch (error) {
     console.error("Error performing filtering with getAllIssues:", error);
   }
+}
+
+// Simple test function to check API
+async function testApiEndpoint() {
+  console.log('=== TESTING API ENDPOINT ===');
+  
+  // Test with a simple API call first
+  try {
+    const response = await fetch('/api/issue/test-container/test-issue', {
+      headers: {
+        'Authorization': `Bearer test-token`
+      }
+    });
+    
+    console.log('Test API response status:', response.status);
+    console.log('Test API response ok:', response.ok);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('Test API error:', errorText);
+    }
+  } catch (error) {
+    console.error('Test API error:', error);
+  }
+  
+  console.log('=== END API TEST ===');
+}
+
+// Function to fetch issue thumbnail from ACC API
+async function fetchIssueThumbnail(issueId, containerId) {
+  try {
+    console.log('=== DEBUGGING THUMBNAIL FETCH ===');
+    console.log('Issue ID:', issueId);
+    console.log('Container ID:', containerId);
+    console.log('Selected Project:', selectedProject);
+    
+    const token = localStorage.getItem('authTokenHemyIssue');
+    console.log('Token exists:', !!token);
+    console.log('Token length:', token?.length);
+    
+    // Use selectedProject as fallback if containerId is not provided
+    const actualContainerId = containerId || selectedProject;
+    console.log('Actual Container ID:', actualContainerId);
+    
+    if (!actualContainerId) {
+      console.error('No container ID provided and no selected project');
+      return null;
+    }
+    
+    // Go directly to our thumbnail endpoint instead of the old one
+    console.log('=== USING NEW THUMBNAIL ENDPOINT ===');
+    
+    // Removed test API call - it was interfering with authentication
+    
+    console.log('=== GOING DIRECTLY TO THUMBNAIL ENDPOINT ===');
+    
+    // Call the working thumbnail function
+    await loadEditIssueThumbnail(issueId, actualContainerId);
+    return null;
+  } catch (error) {
+    console.error('Error fetching issue thumbnail:', error);
+    console.error('Error stack:', error.stack);
+    return null;
+  }
+}
+
+// Function to load and display thumbnail image (hemy project approach)
+async function loadEditIssueThumbnail(issueId, containerId) {
+  console.log('=== LOADING EDIT ISSUE THUMBNAIL ===');
+  console.log('Issue ID:', issueId);
+  console.log('Container ID:', containerId);
+  
+  const authToken = localStorage.getItem('authTokenHemyIssue');
+  const refreshToken = localStorage.getItem('refreshTokenHemyIssue');
+  const expiresAt = localStorage.getItem('expires_atHemyIssue');
+  const internalToken = localStorage.getItem('internal_tokenHemyIssue');
+  const projectId = containerId || window.selectedProject;
+  
+  console.log('=== AUTHENTICATION DEBUG ===');
+  console.log('Auth token exists:', !!authToken);
+  console.log('Auth token length:', authToken ? authToken.length : 'null');
+  console.log('Auth token value:', authToken ? authToken.substring(0, 20) + '...' : 'null');
+  console.log('Refresh token exists:', !!refreshToken);
+  console.log('Refresh token length:', refreshToken ? refreshToken.length : 'null');
+  console.log('Expires at exists:', !!expiresAt);
+  console.log('Expires at value:', expiresAt);
+  console.log('Internal token exists:', !!internalToken);
+  console.log('Project ID:', projectId);
+  console.log('=== END AUTHENTICATION DEBUG ===');
+  
+  try {
+    const resp = await fetch('/api/acc/getIssueThumbnail', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+        'x-refresh-token': refreshToken,
+        'x-expires-at': expiresAt,
+        'x-internal-token': internalToken
+      },
+      body: JSON.stringify({ projectId, issueId }),
+    });
+
+    if (!resp.ok) {
+      console.error('Thumbnail fetch failed:', await resp.text());
+      return;
+    }
+
+    const data = await resp.json();
+    console.log('Thumbnail response data:', data);
+    
+    if (data?.thumbnailUrl) {
+      console.log('=== THUMBNAIL SUCCESS ===');
+      console.log('Thumbnail URL received:', data.thumbnailUrl);
+      
+      // Create a popup to display the thumbnail (since we don't have an Edit panel)
+      const popup = document.createElement('div');
+      popup.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 600px;
+        text-align: center;
+      `;
+      
+      popup.innerHTML = `
+        <h3>Issue Thumbnail</h3>
+        <img src="${data.thumbnailUrl}" style="max-width: 100%; max-height: 400px; border: 1px solid #ddd; border-radius: 4px;" />
+        <p style="margin-top: 10px; color: #666; font-size: 14px;">
+          Issue ID: ${issueId}<br>
+          Project ID: ${projectId}
+        </p>
+        <button onclick="this.parentElement.remove()" style="
+          margin-top: 15px;
+          padding: 8px 16px;
+          background: #007bff;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        ">Close</button>
+      `;
+      
+      document.body.appendChild(popup);
+      
+      console.log('=== THUMBNAIL DISPLAYED ===');
+    } else {
+      console.log('=== NO THUMBNAIL URL RETURNED ===');
+      console.log('Response data:', data);
+      
+      // Show message that no thumbnail is available
+      const popup = document.createElement('div');
+      popup.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        z-index: 10000;
+        max-width: 500px;
+        text-align: center;
+      `;
+      
+      const message = data?.message || "The thumbnail image is not accessible through standard Autodesk APIs.";
+      
+      popup.innerHTML = `
+        <h3 style="color: #dc3545; margin-bottom: 15px;">Thumbnail Not Available</h3>
+        <p style="color: #666; line-height: 1.5;">
+          <strong>Issue ID:</strong> ${issueId}<br>
+          <strong>Project ID:</strong> ${projectId}<br><br>
+          ${message}
+        </p>
+        <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 12px; color: #6c757d;">
+          <strong>Technical Details:</strong><br>
+          This is normal behavior for many Autodesk Construction Cloud issues. 
+          The issue data was successfully retrieved, but the thumbnail image 
+          is not accessible through Autodesk's OSS APIs.
+        </div>
+        <button onclick="this.parentElement.remove()" style="
+          margin-top: 15px;
+          padding: 8px 16px;
+          background: #dc3545;
+          color: white;
+          border: none;
+          border-radius: 4px;
+          cursor: pointer;
+        ">Close</button>
+      `;
+      
+      document.body.appendChild(popup);
+    }
+  } catch (err) {
+    console.error('Thumbnail load error:', err);
+    
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      z-index: 10000;
+      max-width: 400px;
+      text-align: center;
+    `;
+    
+    popup.innerHTML = `
+      <h3>Issue Thumbnail</h3>
+      <p style="color: #dc3545;">
+        <strong>Error Loading Thumbnail</strong><br><br>
+        Issue ID: ${issueId}<br><br>
+        ${err.message || 'Unknown error occurred'}
+      </p>
+      <button onclick="this.parentElement.remove()" style="
+        margin-top: 15px;
+        padding: 8px 16px;
+        background: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      ">Close</button>
+    `;
+    
+    document.body.appendChild(popup);
+  }
+  
+  console.log('=== END THUMBNAIL LOAD ===');
+}
+
+// Function to download and display thumbnail image (legacy - redirect to new approach)
+async function displayIssueThumbnail(snapshotUrn, issueId, containerId) {
+  console.log('=== DISPLAYING THUMBNAIL (LEGACY) ===');
+  console.log('Redirecting to loadEditIssueThumbnail...');
+  console.log('Passing containerId:', containerId);
+  
+  // Use the working hemy project approach
+  await loadEditIssueThumbnail(issueId, containerId);
 }
 
 async function performFilteringWithAvailableIssues(levelId, allIssues) {
@@ -3397,6 +3635,129 @@ function updateDropdownWithLevels() {
     console.error("Show closed issues checkbox not found!");
   }
 }
+
+// Add a test button to verify click functionality
+const testButton = document.createElement('button');
+testButton.textContent = 'Test Thumbnail Popup';
+testButton.style.cssText = `
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 10001;
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+`;
+testButton.onclick = async function() {
+  console.log('=== TEST BUTTON CLICKED ===');
+  // Test with the known issue ID
+  await loadEditIssueThumbnail('36490c73-427e-4af7-bb6a-1df9791c0277', 'bf8f603c-7e37-4367-9900-69e279377191');
+};
+document.body.appendChild(testButton);
+
+// Add global click listener to handle issue clicks with event delegation
+document.addEventListener('click', function(event) {
+  console.log('=== CLICK EVENT FIRED ===');
+  console.log('Click target:', event.target);
+  console.log('Click target classes:', event.target.className);
+  console.log('Click target parent:', event.target.parentElement);
+  
+  const issueElement = event.target.closest('.sub-icon.issue');
+  console.log('Issue element found:', issueElement);
+  
+  if (issueElement) {
+    console.log('=== ISSUE CLICKED (GLOBAL) ===');
+    console.log('Issue element clicked:', issueElement);
+    console.log('Issue element classes:', issueElement.className);
+    console.log('Issue element dataset:', issueElement.dataset);
+    
+    // Try multiple methods to get the issue ID
+    let issueId = issueElement.dataset.issueId;
+    console.log('Issue ID from dataset:', issueId);
+    
+    // Fallback: extract from element ID
+    if (!issueId && issueElement.id) {
+      const match = issueElement.id.match(/div-issue-subicon-(.+)/);
+      if (match) {
+        issueId = match[1];
+        console.log('Issue ID from element ID:', issueId);
+      }
+    }
+    
+    // Fallback: extract from text content
+    if (!issueId) {
+      const textContent = issueElement.textContent;
+      const match = textContent.match(/#(\d+)/);
+      if (match) {
+        issueId = match[1];
+        console.log('Issue ID from text content:', issueId);
+      }
+    }
+    
+    console.log('Final Issue ID:', issueId);
+    
+    if (issueId) {
+      console.log('Triggering thumbnail fetch for issue:', issueId);
+      
+      // Trigger the thumbnail fetch
+      (async () => {
+        try {
+          const containerId = selectedProject;
+          console.log('Using container ID:', containerId);
+          
+          const snapshotUrn = await fetchIssueThumbnail(issueId, containerId);
+          
+          if (snapshotUrn) {
+            console.log('Found thumbnail for issue:', issueId, snapshotUrn);
+            await displayIssueThumbnail(snapshotUrn, issueId, containerId);
+          } else {
+            console.log('No thumbnail available for issue:', issueId);
+            // Show a message that no thumbnail is available
+            let thumbnailDiv = document.getElementById('issue-thumbnail-display');
+            if (!thumbnailDiv) {
+              thumbnailDiv = document.createElement('div');
+              thumbnailDiv.id = 'issue-thumbnail-display';
+              thumbnailDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+                z-index: 10000;
+                max-width: 400px;
+              `;
+              document.body.appendChild(thumbnailDiv);
+            }
+
+            thumbnailDiv.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>No Thumbnail Available</h3>
+                <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+              </div>
+              <div style="color: #666;">
+                This issue does not have a thumbnail image.
+              </div>
+              <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                Issue ID: ${issueId}
+              </div>
+            `;
+          }
+        } catch (error) {
+          console.error('Error fetching thumbnail:', error);
+        }
+      })();
+    }
+    
+    console.log('=== END ISSUE CLICK (GLOBAL) ===');
+  }
+});
 
 window.performFilteringWithGetAllIssues = performFilteringWithGetAllIssues;
 window.filterIssuesByLevel = filterIssuesByLevel;

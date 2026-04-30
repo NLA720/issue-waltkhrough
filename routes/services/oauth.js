@@ -239,10 +239,14 @@ service.authCallbackMiddleware = async (req, res, next) => {
 };
 
 service.authRefreshMiddleware = async (req, res, next) => {
+    console.log("=== AUTHENTICATION MIDDLEWARE CALLED ===");
+    console.log("Request URL:", req.url);
+    console.log("Request method:", req.method);
+    console.log("Headers:", Object.keys(req.headers));
+    
  // First check session
     let { refresh_token, expires_at, internal_token } = req.session;
 
-    // If not in session, hydrate from headers
     // if (!refresh_token && req.headers["x-refresh-token"]) {
     //   refresh_token = req.headers["x-refresh-token"];
     //   expires_at = req.headers["x-expires-at"];
@@ -262,9 +266,24 @@ service.authRefreshMiddleware = async (req, res, next) => {
     refresh_token = req.headers["x-refresh-token"];
     expires_at = req.headers["x-expires-at"];
     internal_token = req.headers["x-internal-token"];
+    
+    console.log("Initial token values from headers:");
+    console.log("refresh_token:", refresh_token ? refresh_token.substring(0, 20) + '...' : 'null');
+    console.log("expires_at:", expires_at);
+    console.log("internal_token:", internal_token ? internal_token.substring(0, 20) + '...' : 'null');
+
+    // Fallback: extract token from Authorization header if other tokens are missing
+    if (!internal_token) {
+        const authHeader = req.headers.authorization || req.headers.Authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            internal_token = authHeader.substring(7); // Remove 'Bearer ' prefix
+            console.log("Extracted token from Authorization header:", internal_token ? internal_token.substring(0, 20) + '...' : 'null');
+        }
+    }
 
     console.log("Using refresh token:", refresh_token);
     console.log("Token expires at:", expires_at, "which is", new Date(expires_at));
+    console.log("Internal token exists:", !!internal_token);
     console.log(expires_at < Date.now());
     if (expires_at < Date.now()) {
         const internalCredentials = await authenticationClient.refreshToken(refresh_token, APS_CLIENT_ID, {
